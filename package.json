@@ -1,0 +1,11 @@
+{
+  "name": "conecta-portaria",
+  "version": "1.0.0",
+  "description": "CONECTA - sistema B2B (login, marketplace, contratos, compliance, financeiro e portaria) com MySQL",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  }
+}

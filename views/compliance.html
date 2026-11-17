@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Compliance</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <div id="telaLista">
+    <div class="linha espaco" style="flex-wrap:wrap">
+      <div><h1 class="titulo">Portal da Terceirizada</h1><p class="sub">Compliance de RH: funcionários, documentos, treinamentos e equipamentos</p></div>
+      <button class="btn" id="novo">+ Novo funcionário</button>
+    </div>
+    <div id="avisos"></div>
+    <div class="busca"><input id="busca" type="text" placeholder="Buscar por nome ou CPF…" aria-label="Buscar funcionário" autocomplete="off"></div>
+    <div id="tabela"></div>
+  </div>
+  <div id="telaDetalhe" style="display:none"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, dataBR, cpfF, toast, formModal } = CONECTA;
+  let eu, atual = null, aba = 'docs';
+
+  // texto/cor do contador de dias para vencer
+  function contador(dias, semData) {
+    if (dias === null || dias === undefined) return semData || '<span class="badge cinza">Não cadastrado</span>';
+    dias = Number(dias);
+    if (dias < 0) return '<span class="badge erro">Vencido há ' + (-dias) + ' dia(s)</span>';
+    if (dias <= 30) return '<span class="badge pend">Vence em ' + dias + ' dia(s)</span>';
+    return '<span class="badge ok">Vence em ' + dias + ' dias</span>';
+  }
+  const ST_DOC = { PENDENTE: ['pend', 'Pendente de análise'], APROVADO: ['ok', 'Aprovado'], REPROVADO: ['erro', 'Reprovado'] };
+  const badgeAnalise = d => d ? '<span class="badge ' + ST_DOC[d.status_analise][0] + '">' + ST_DOC[d.status_analise][1] + '</span>' : '';
+  const abrirArq = p => !p ? '—' : (p.startsWith('arquivos/') ? '<a href="/' + esc(p) + '" target="_blank">abrir PDF</a>' : '<span class="muted">anexado (exemplo)</span>');
+
+  // ---------------- avisos (terceirizada) ----------------
+  async function avisos() {
+    if (eu.perfil !== 'TERCEIRIZADA') return;
+    const lista = await api('/api/notificacoes');
+    const novas = lista.filter(n => !n.lida);
+    const el = document.getElementById('avisos');
+    if (!novas.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="card" style="margin-bottom:16px;border-left:5px solid var(--destaque)"><div class="linha espaco"><b>🔔 Avisos da contratante (' + novas.length + ')</b><button class="btn mini sec" id="lidas">Marcar como lidos</button></div>' +
+      '<ul style="margin:8px 0 0;padding-left:18px">' + novas.map(n => '<li>' + esc(n.mensagem) + '</li>').join('') + '</ul></div>';
+    document.getElementById('lidas').onclick = async () => { await api('/api/notificacoes/lidas', { method: 'POST', body: {} }); avisos(); };
+  }
+
+  // ---------------- lista ----------------
+  async function listar() {
+    const q = document.getElementById('busca').value;
+    const el = document.getElementById('tabela');
+    try {
+      const dados = await api('/api/funcionarios?q=' + encodeURIComponent(q));
+      if (!dados.length) { el.innerHTML = '<div class="vazio card">Nenhum funcionário encontrado.</div>'; return; }
+      el.innerHTML = '<table class="tabela"><thead><tr><th>Nome</th><th>CPF</th>' + (eu.perfil === 'ADMIN' ? '<th>Empresa</th>' : '') + '<th>ASO</th><th>Status</th><th></th></tr></thead><tbody>' +
+        dados.map(f => '<tr><td><b>' + esc(f.nome) + '</b></td><td>' + esc(cpfF(f.cpf)) + '</td>' + (eu.perfil === 'ADMIN' ? '<td>' + esc(f.empresa) + '</td>' : '') +
+          '<td>' + contador(f.dias_aso) + '</td><td>' + (f.motivo_negado === null ? '<span class="badge ok">Regular</span>' : '<span class="badge erro" title="' + esc(f.motivo_negado) + '">Pendência</span> <span class="muted">' + esc(f.motivo_negado) + '</span>') +
+          '</td><td class="num"><button class="btn mini" data-id="' + f.id_funcionario + '">Abrir</button></td></tr>').join('') + '</tbody></table>';
+    } catch (err) { el.innerHTML = '<div class="msg-erro">' + esc(err.message) + '</div>'; }
+  }
+
+  // ---------------- detalhe ----------------
+  async function abrir(id) {
+    atual = await api('/api/funcionarios/' + id);
+    document.getElementById('telaLista').style.display = 'none';
+    document.getElementById('telaDetalhe').style.display = 'block';
+    desenhar();
+  }
+  function desenhar() {
+    const f = atual, el = document.getElementById('telaDetalhe');
+    el.innerHTML =
+      '<p><a href="#" id="voltar">← Voltar para a lista</a></p>' +
+      '<div class="card linha espaco" style="margin-bottom:18px;flex-wrap:wrap"><div><h1 class="titulo" style="margin:0">' + esc(f.nome) + '</h1><div class="muted">CPF ' + esc(cpfF(f.cpf)) + ' · ' + esc(f.empresa) + '</div></div>' +
+      (f.motivo_negado === null ? '<span class="badge ok" style="font-size:.9rem">Regular – acesso liberado</span>' : '<span class="badge erro" style="font-size:.9rem">Pendência: ' + esc(f.motivo_negado) + '</span>') + '</div>' +
+      '<div class="abas" role="tablist"><button data-aba="docs" class="' + (aba === 'docs' ? 'ativa' : '') + '">Documentos</button><button data-aba="trein" class="' + (aba === 'trein' ? 'ativa' : '') + '">Treinamentos NR</button><button data-aba="eqp" class="' + (aba === 'eqp' ? 'ativa' : '') + '">EPIs e Ferramentas</button></div>' +
+      '<div id="abaConteudo"></div>';
+    el.querySelector('#voltar').onclick = e => { e.preventDefault(); atual = null; document.getElementById('telaDetalhe').style.display = 'none'; document.getElementById('telaLista').style.display = 'block'; listar(); };
+    el.querySelectorAll('.abas button').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+    ({ docs: abaDocs, trein: abaTrein, eqp: abaEqp })[aba](el.querySelector('#abaConteudo'));
+  }
+  async function recarregar() { atual = await api('/api/funcionarios/' + atual.id_funcionario); desenhar(); }
+  const enviar = (rota, extra) => async (v, arq) => { await api('/api/funcionarios/' + atual.id_funcionario + rota, { body: { ...v, ...extra, arquivo: arq } }); toast('Salvo com sucesso!'); await recarregar(); };
+
+  function abaDocs(box) {
+    const ultimo = c => atual.documentos.find(d => d.codigo === c);
+    const aso = ultimo('ASO'), ficha = ultimo('FICHA_REGISTRO');
+    box.innerHTML =
+      '<div class="grid">' +
+      '<div class="card"><div class="linha espaco"><b>ASO – Atestado de Saúde Ocupacional</b>' + contador(aso ? aso.dias : null) + '</div>' +
+        '<p>' + badgeAnalise(aso) + (aso && aso.justificativa ? ' <span class="muted">Motivo: ' + esc(aso.justificativa) + '</span>' : '') + '</p>' +
+        '<p class="muted">' + (aso ? 'Emitido em ' + dataBR(aso.data_emissao) + ' · validade ' + dataBR(aso.data_validade) + ' · ' : 'Nenhum ASO anexado. ') + (aso ? abrirArq(aso.arquivo_pdf) : '') + '</p>' +
+        '<button class="btn mini" id="addAso">' + (aso ? 'Anexar novo ASO' : 'Anexar ASO') + '</button></div>' +
+      '<div class="card"><div class="linha espaco"><b>Ficha de Registro</b>' + (ficha ? badgeAnalise(ficha) : '<span class="badge cinza">Não anexada</span>') + '</div>' +
+        (ficha && ficha.justificativa ? '<p class="muted">Motivo: ' + esc(ficha.justificativa) + '</p>' : '') +
+        '<p class="muted">' + (ficha ? 'Anexada · ' + abrirArq(ficha.arquivo_pdf) : 'Envie a ficha de registro em PDF.') + '</p>' +
+        '<button class="btn mini" id="addFicha">' + (ficha ? 'Substituir ficha' : 'Anexar ficha') + '</button></div></div>';
+    box.querySelector('#addAso').onclick = () => formModal({ titulo: 'Anexar ASO', botao: 'Anexar ASO',
+      campos: [{ id: 'data_emissao', rotulo: 'Data de emissão', tipo: 'date' }, { id: 'data_validade', rotulo: 'Validade do ASO', tipo: 'date', obrigatorio: true }],
+      arquivo: { rotulo: 'ASO em PDF', obrigatorio: true }, enviar: enviar('/documentos', { codigo: 'ASO' }) });
+    box.querySelector('#addFicha').onclick = () => formModal({ titulo: 'Anexar Ficha de Registro', botao: 'Anexar',
+      campos: [{ id: 'data_emissao', rotulo: 'Data da ficha', tipo: 'date' }],
+      arquivo: { rotulo: 'Ficha de Registro em PDF', obrigatorio: true }, enviar: enviar('/documentos', { codigo: 'FICHA_REGISTRO' }) });
+  }
+
+  function abaTrein(box) {
+    box.innerHTML = '<table class="tabela"><thead><tr><th>Treinamento</th><th>Realizado em</th><th>Validade</th><th>Situação</th><th>Certificado</th><th></th></tr></thead><tbody>' +
+      atual.treinamentos.map(t => '<tr><td><b>' + esc(t.codigo) + '</b> <span class="muted">' + esc(t.descricao) + '</span>' + (t.obrigatorio ? ' <span class="tag">obrigatório</span>' : '') + '</td><td>' + dataBR(t.data_realizacao) + '</td><td>' + dataBR(t.data_validade) + '</td><td>' +
+        contador(t.dias, t.obrigatorio ? '<span class="badge erro">Não realizado</span>' : '<span class="badge cinza">Não realizado</span>') + '</td><td>' + abrirArq(t.certificado_pdf) + '</td>' +
+        '<td class="num"><button class="btn mini" data-id="' + t.id_treinamento + '" data-nome="' + esc(t.codigo) + '">' + (t.data_realizacao ? 'Renovar' : 'Registrar') + '</button></td></tr>').join('') + '</tbody></table>';
+    box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => formModal({ titulo: 'Registrar ' + b.dataset.nome, botao: 'Registrar',
+      campos: [{ id: 'data_realizacao', rotulo: 'Data de realização', tipo: 'date', obrigatorio: true }],
+      arquivo: { rotulo: 'Certificado em PDF (opcional)' }, enviar: enviar('/treinamentos', { id_treinamento: b.dataset.id }) }));
+  }
+
+  function abaEqp(box) {
+    box.innerHTML = '<div class="linha espaco" style="margin-bottom:12px"><span class="muted">Equipamentos da empresa e o Termo de Responsabilidade assinado por este funcionário.</span><button class="btn sec mini" id="addEqp">+ Novo equipamento</button></div>' +
+      '<table class="tabela"><thead><tr><th>Equipamento</th><th>Tipo</th><th>Termo de Responsabilidade</th><th></th></tr></thead><tbody>' +
+      (atual.equipamentos.length ? atual.equipamentos.map(q => '<tr><td><b>' + esc(q.descricao) + '</b></td><td><span class="tag">' + (q.tipo === 'EPI' ? 'EPI' : 'Ferramenta') + '</span></td><td>' +
+        (q.id_termo ? '<span class="badge ok">Termo anexado</span> <span class="muted">entrega ' + dataBR(q.data_entrega) + '</span> ' + abrirArq(q.arquivo_pdf) : '<span class="badge pend">Sem termo</span>') + '</td>' +
+        '<td class="num"><button class="btn mini" data-id="' + q.id_equipamento + '" data-nome="' + esc(q.descricao) + '">' + (q.id_termo ? 'Substituir termo' : 'Anexar termo') + '</button></td></tr>').join('') : '<tr><td colspan="4" class="vazio">Nenhum equipamento cadastrado.</td></tr>') + '</tbody></table>';
+    box.querySelector('#addEqp').onclick = () => formModal({ titulo: 'Novo equipamento', botao: 'Cadastrar',
+      campos: [{ id: 'descricao', rotulo: 'Descrição', obrigatorio: true }, { id: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [{ v: 'EPI', t: 'EPI' }, { v: 'FERRAMENTA', t: 'Ferramenta' }] }],
+      enviar: enviar('/equipamentos') });
+    box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => formModal({ titulo: 'Termo de Responsabilidade – ' + b.dataset.nome, botao: 'Anexar termo',
+      campos: [{ id: 'data_entrega', rotulo: 'Data de entrega', tipo: 'date', obrigatorio: true }],
+      arquivo: { rotulo: 'Termo assinado em PDF', obrigatorio: true }, enviar: enviar('/termos', { id_equipamento: b.dataset.id }) }));
+  }
+
+  // ---------------- novo funcionario ----------------
+  async function novo() {
+    const campos = [{ id: 'nome', rotulo: 'Nome completo', obrigatorio: true }, { id: 'cpf', rotulo: 'CPF (somente números)', obrigatorio: true, maxlength: 14 }];
+    if (eu.perfil === 'ADMIN') {
+      const emp = await api('/api/marketplace');
+      campos.push({ id: 'id_empresa', rotulo: 'Empresa', tipo: 'select', opcoes: emp.map(e => ({ v: e.id_empresa, t: e.nome_fantasia })) });
+    }
+    formModal({ titulo: 'Novo funcionário', botao: 'Cadastrar', campos,
+      enviar: async v => { const r = await api('/api/funcionarios', { body: v }); toast('Funcionário cadastrado!'); await abrir(r.id_funcionario); } });
+  }
+
+  document.getElementById('tabela').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b) abrir(b.dataset.id).catch(err => toast(err.message, true)); });
+  document.getElementById('novo').onclick = () => novo().catch(err => toast(err.message, true));
+  let t; document.getElementById('busca').addEventListener('input', () => { clearTimeout(t); t = setTimeout(listar, 250); });
+  CONECTA.iniciar('compliance').then(u => { eu = u; listar(); avisos().catch(() => {}); });
+</script>
+</body>
+</html>

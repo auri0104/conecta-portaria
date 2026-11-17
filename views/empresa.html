@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Perfil da Empresa</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <p><a href="/marketplace">← Voltar ao Marketplace</a></p>
+  <div id="perfil"><div class="vazio">Carregando…</div></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, iniciais, cnpjF, dataBR } = CONECTA;
+  const id = new URLSearchParams(location.search).get('id');
+  async function carregar() {
+    const box = document.getElementById('perfil');
+    try {
+      const e = await api('/api/empresas/' + encodeURIComponent(id));
+      const fone = String(e.whatsapp || '').replace(/\D/g, '');
+      const zap = 'https://wa.me/55' + fone + '?text=' + encodeURIComponent('Olá! Encontrei a ' + e.nome_fantasia + ' no CONECTA e gostaria de conversar.');
+      let vinculo = '';
+      if (e.vinculo && e.vinculo.status === 'ATIVO') vinculo = '<p><span class="badge ok">Vínculo ativo</span> <span class="muted">até ' + dataBR(e.vinculo.data_fim) + '</span></p>';
+      if (e.vinculo && e.vinculo.status === 'SOLICITADO') vinculo = '<p><span class="badge pend">Solicitação de vínculo em andamento</span></p>';
+      box.innerHTML =
+        '<div class="card" style="margin-bottom:20px"><div class="linha" style="gap:18px;flex-wrap:wrap">' +
+          '<div class="emp-logo" style="width:72px;height:72px;font-size:1.6rem">' + esc(iniciais(e.nome_fantasia)) + '</div>' +
+          '<div style="flex:1;min-width:240px"><h1 class="titulo" style="margin:0">' + esc(e.nome_fantasia) + ' ' + (e.verificado ? '<span class="badge ok" style="vertical-align:middle">Verificado</span>' : '') + '</h1>' +
+          '<div class="muted">' + esc(e.razao_social) + '</div>' +
+          '<div style="margin-top:8px"><b>CNPJ:</b> ' + esc(cnpjF(e.cnpj)) + ' &nbsp; <b>Localização:</b> ' + esc(e.cidade) + ' – ' + esc(e.uf) + '</div>' +
+          '<div class="muted" style="margin-top:4px">' + esc(e.email_contato || '') + ' · ' + e.total_funcionarios + ' colaborador(es) cadastrado(s)</div></div>' +
+          '<div style="text-align:center"><div style="font-size:1.8rem;font-weight:800"><span class="estrela">★</span> ' + (e.avaliacao_media != null ? Number(e.avaliacao_media).toFixed(1) : '—') + '</div><div class="muted">' + e.total_avaliacoes + ' avaliação(ões)</div></div>' +
+        '</div>' +
+        '<div class="tags">' + String(e.especialidades || '').split(',').filter(Boolean).map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div></div>' +
+        '<div style="text-align:center;margin:28px 0"><a class="btn whats" href="' + zap + '" target="_blank" rel="noopener">💬 Contatar Empresa</a>' +
+          '<div class="muted" style="margin-top:6px">Abre uma conversa no WhatsApp com ' + esc(e.whatsapp || 'o contato da empresa') + '</div></div>' +
+        '<h2>Avaliações recentes</h2>' +
+        (e.avaliacoes.length ? e.avaliacoes.map(a => '<div class="card" style="margin-bottom:10px"><span class="estrela">' + '★'.repeat(a.nota) + '</span><span class="muted">' + '★'.repeat(5 - a.nota) + '</span> <span class="muted">· ' + dataBR(a.data_avaliacao) + '</span><div>' + esc(a.comentario || '') + '</div></div>').join('') : '<div class="vazio">Ainda sem avaliações.</div>') +
+        '<div class="card" style="margin-top:28px;text-align:center"><h2 style="margin-top:0">Contratação</h2>' + vinculo +
+          '<a class="btn" href="/contrato?empresa=' + e.id_empresa + '">🤝 Solicitar Vínculo</a>' +
+          '<div class="muted" style="margin-top:6px">Inicia o processo contratual com esta empresa</div></div>';
+    } catch (err) { box.innerHTML = '<div class="msg-erro">' + esc(err.message) + '</div>'; }
+  }
+  CONECTA.iniciar('marketplace').then(carregar);
+</script>
+</body>
+</html>

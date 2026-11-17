@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Análise de Documentos</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <h1 class="titulo">Análise de Documentos</h1>
+  <p class="sub">Fila de documentos enviados pelas terceirizadas. Aprove ou reprove (com justificativa) para atualizar o acesso do colaborador na portaria.</p>
+  <div class="abas" role="tablist" id="abas"></div>
+  <div id="tabela"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, dataBR, cpfF, toast, formModal } = CONECTA;
+  let status = 'PENDENTE', dados = null;
+  const NOMES = { PENDENTE: 'Pendentes', APROVADO: 'Aprovados', REPROVADO: 'Reprovados' };
+  const BADGE = { PENDENTE: ['pend', 'Pendente de análise'], APROVADO: ['ok', 'Aprovado'], REPROVADO: ['erro', 'Reprovado'] };
+  const abrirArq = p => !p ? '—' : (p.startsWith('arquivos/') ? '<a href="/' + esc(p) + '" target="_blank">abrir PDF</a>' : '<span class="muted">anexado (exemplo)</span>');
+
+  async function carregar() {
+    dados = await api('/api/analise?status=' + status);
+    document.getElementById('abas').innerHTML = Object.keys(NOMES).map(k =>
+      '<button data-st="' + k + '" class="' + (k === status ? 'ativa' : '') + '">' + NOMES[k] + ' (' + dados.contagem[k] + ')</button>').join('');
+    const el = document.getElementById('tabela');
+    if (!dados.documentos.length) { el.innerHTML = '<div class="vazio card">Nenhum documento ' + NOMES[status].toLowerCase() + '.</div>'; return; }
+    el.innerHTML = '<table class="tabela"><thead><tr><th>Colaborador</th><th>Empresa</th><th>Documento</th><th>Emissão / Validade</th><th>Arquivo</th><th>Situação</th><th></th></tr></thead><tbody>' +
+      dados.documentos.map(d => '<tr><td><b>' + esc(d.nome) + '</b><div class="muted">' + esc(cpfF(d.cpf)) + '</div></td><td>' + esc(d.empresa) + '</td><td>' + esc(d.codigo) + '</td>' +
+        '<td>' + dataBR(d.data_emissao) + ' / ' + dataBR(d.data_validade) + '</td><td>' + abrirArq(d.arquivo_pdf) + '</td>' +
+        '<td><span class="badge ' + BADGE[d.status_analise][0] + '">' + BADGE[d.status_analise][1] + '</span>' + (d.justificativa ? '<div class="muted">' + esc(d.justificativa) + '</div>' : '') + '</td>' +
+        '<td class="num">' + (d.status_analise === 'PENDENTE' ? '<button class="btn mini" data-ap="' + d.id_documento + '">Aprovar Documento</button> <button class="btn mini sec" data-rp="' + d.id_documento + '" data-nome="' + esc(d.nome + ' – ' + d.codigo) + '">Reprovar</button>' : '') + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  document.getElementById('abas').addEventListener('click', e => { const b = e.target.closest('button[data-st]'); if (b) { status = b.dataset.st; carregar().catch(err => toast(err.message, true)); } });
+  document.getElementById('tabela').addEventListener('click', async e => {
+    const ap = e.target.closest('[data-ap]'), rp = e.target.closest('[data-rp]');
+    try {
+      if (ap) {
+        const r = await api('/api/documentos/' + ap.dataset.ap + '/aprovar', { method: 'POST', body: {} });
+        toast(r.status_colaborador === 'LIBERADO' ? 'Documento aprovado. Colaborador agora está LIBERADO na portaria.' : 'Documento aprovado. Colaborador ainda bloqueado: ' + r.motivo);
+        await carregar();
+      }
+      if (rp) formModal({ titulo: 'Reprovar documento – ' + rp.dataset.nome, botao: 'Confirmar reprovação',
+        campos: [{ id: 'justificativa', rotulo: 'Justificativa (obrigatória)', tipo: 'textarea', obrigatorio: true }],
+        enviar: async v => { await api('/api/documentos/' + rp.dataset.rp + '/reprovar', { body: v }); toast('Documento reprovado. A empresa foi notificada.'); await carregar(); } });
+    } catch (err) { toast(err.message, true); }
+  });
+  CONECTA.iniciar('analise').then(() => carregar()).catch(err => toast(err.message, true));
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Financeiro</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <div class="linha espaco" style="flex-wrap:wrap">
+    <div><h1 class="titulo">Painel Financeiro</h1><p class="sub" id="subtitulo"></p></div>
+    <button class="btn" id="emitir" style="display:none">🧾 Emitir Nota Fiscal</button>
+  </div>
+  <h2 style="margin-top:0">Resumo de Saldos</h2>
+  <div class="cards-resumo" id="resumo"></div>
+  <div class="filtros">
+    <label class="campo"><span>Vencimento de</span><input type="date" id="de"></label>
+    <label class="campo"><span>até</span><input type="date" id="ate"></label>
+    <button class="btn sec" id="filtrar">Filtrar</button>
+    <button class="btn sec" id="limpar">Limpar</button>
+    <button class="btn" id="exportar" style="margin-left:auto">⬇ Exportar (Excel/CSV)</button>
+  </div>
+  <h2 style="margin-top:0">Lista de Lançamentos</h2>
+  <div id="tabela"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, brl, dataBR, toast, formModal } = CONECTA;
+  let eu, linhas = [];
+  const ST = { PAGA: ['ok', 'Paga'], PENDENTE: ['pend', 'Em Aberto'], VENCIDA: ['erro', 'Vencida'] };
+  const soma = arr => arr.reduce((t, f) => t + Number(f.valor), 0);
+
+  async function carregar() {
+    const qs = new URLSearchParams();
+    if (document.getElementById('de').value) qs.set('de', document.getElementById('de').value);
+    if (document.getElementById('ate').value) qs.set('ate', document.getElementById('ate').value);
+    linhas = await api('/api/faturas?' + qs);
+    const pagas = linhas.filter(f => f.status === 'PAGA'), abertas = linhas.filter(f => f.status === 'PENDENTE'), vencidas = linhas.filter(f => f.status === 'VENCIDA');
+    const admin = eu.perfil === 'ADMIN';
+    document.getElementById('resumo').innerHTML =
+      '<div class="card resumo vermelho"><div class="muted">💳 ' + (admin ? 'Total a Pagar' : 'Total a Receber') + '</div><div class="valor">' + brl(soma(abertas) + soma(vencidas)) + '</div><div class="muted">' + (abertas.length + vencidas.length) + ' nota(s) não paga(s)</div></div>' +
+      '<div class="card resumo verde"><div class="muted">✅ ' + (admin ? 'Total Pago' : 'Total Recebido') + '</div><div class="valor">' + brl(soma(pagas)) + '</div><div class="muted">' + pagas.length + ' nota(s)</div></div>' +
+      '<div class="card resumo amarelo"><div class="muted">⏳ Pendentes</div><div class="valor">' + brl(soma(abertas)) + '</div><div class="muted">' + abertas.length + ' dentro do prazo</div></div>' +
+      '<div class="card resumo vermelho"><div class="muted">⚠️ Vencidas</div><div class="valor">' + brl(soma(vencidas)) + '</div><div class="muted">' + vencidas.length + ' nota(s)</div></div>';
+    const el = document.getElementById('tabela');
+    if (!linhas.length) { el.innerHTML = '<div class="vazio card">Nenhum lançamento no período.</div>'; return; }
+    el.innerHTML = '<table class="tabela"><thead><tr><th>Nota</th><th>' + (admin ? 'Empresa Parceira' : 'Contratante') + '</th><th>Serviço</th><th class="num">Valor (R$)</th><th>Vencimento</th><th>Status</th><th></th></tr></thead><tbody>' +
+      linhas.map((f, i) => { const s = ST[f.status] || ['cinza', f.status];
+        return '<tr><td>' + esc(f.numero_nf) + '</td><td><b>' + esc(admin ? f.terceirizada : f.contratante) + '</b></td><td>' + esc(f.descricao_servico) + '</td><td class="num">' + brl(f.valor) + '</td><td>' + dataBR(f.data_vencimento) + '</td>' +
+          '<td><span class="badge ' + s[0] + '">' + s[1] + '</span></td><td class="num"><button class="btn mini sec" data-ver="' + i + '" title="Visualizar fatura">🧾 Ver</button>' +
+          (admin && f.status !== 'PAGA' ? ' <button class="btn mini" data-pagar="' + f.id_fatura + '">Marcar paga</button>' : '') + '</td></tr>'; }).join('') + '</tbody></table>';
+  }
+
+  function verFatura(f) {
+    const m = document.createElement('div'); m.className = 'modal-fundo';
+    const s = ST[f.status] || ['cinza', f.status];
+    m.innerHTML = '<div class="modal"><h3>Nota Fiscal ' + esc(f.numero_nf) + '</h3>' +
+      '<p><b>Contratante:</b> ' + esc(f.contratante) + '<br><b>Terceirizada:</b> ' + esc(f.terceirizada) + '<br><b>Serviço:</b> ' + esc(f.descricao_servico) + '</p>' +
+      '<p><b>Valor:</b> ' + brl(f.valor) + '<br><b>Emissão:</b> ' + dataBR(f.data_emissao) + '<br><b>Vencimento:</b> ' + dataBR(f.data_vencimento) + '<br><b>Pagamento:</b> ' + dataBR(f.data_pagamento) + '</p>' +
+      '<p><span class="badge ' + s[0] + '">' + s[1] + '</span></p><div class="acoes"><button class="btn">Fechar</button></div></div>';
+    document.body.appendChild(m);
+    m.querySelector('.btn').onclick = () => m.remove();
+    m.addEventListener('mousedown', e => { if (e.target === m) m.remove(); });
+  }
+
+  function exportar() {
+    if (!linhas.length) return toast('Nada para exportar.', true);
+    const admin = eu.perfil === 'ADMIN';
+    const cel = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const csv = [['Nota', admin ? 'Empresa Parceira' : 'Contratante', 'Serviço', 'Valor (R$)', 'Emissão', 'Vencimento', 'Pagamento', 'Status']].concat(
+      linhas.map(f => [f.numero_nf, admin ? f.terceirizada : f.contratante, f.descricao_servico, Number(f.valor).toFixed(2).replace('.', ','), dataBR(f.data_emissao), dataBR(f.data_vencimento), dataBR(f.data_pagamento), (ST[f.status] || [0, f.status])[1]]))
+      .map(l => l.map(cel).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'financeiro_conecta.csv'; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  async function emitir() {
+    const contratos = await api('/api/faturas/contratos');
+    if (!contratos.length) return toast('Você não tem contrato ativo para emitir nota.', true);
+    const em30 = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+    formModal({ titulo: 'Emitir Nota Fiscal', botao: 'Emitir',
+      campos: [
+        { id: 'id_contrato', rotulo: 'Contrato / Contratante', tipo: 'select', opcoes: contratos.map(c => ({ v: c.id_contrato, t: c.contratante + ' (' + (c.tipo_cobranca === 'HORA' ? 'por hora' : 'mensal') + ')' })) },
+        { id: 'descricao_servico', rotulo: 'Descrição do serviço', obrigatorio: true },
+        { id: 'valor', rotulo: 'Valor (R$)', tipo: 'number', step: '0.01', obrigatorio: true, valor: contratos[0].tipo_cobranca === 'MENSAL' ? contratos[0].valor_prestacao : '' },
+        { id: 'data_vencimento', rotulo: 'Vencimento', tipo: 'date', obrigatorio: true, valor: em30 }],
+      enviar: async v => { const r = await api('/api/faturas', { body: v }); toast('Nota ' + r.numero_nf + ' emitida! Já aparece como pendência para a contratante.'); await carregar(); } });
+  }
+
+  document.getElementById('tabela').addEventListener('click', async e => {
+    const v = e.target.closest('[data-ver]'), p = e.target.closest('[data-pagar]');
+    if (v) verFatura(linhas[Number(v.dataset.ver)]);
+    if (p) { try { await api('/api/faturas/' + p.dataset.pagar + '/pagar', { method: 'POST', body: {} }); toast('Nota marcada como paga.'); await carregar(); } catch (err) { toast(err.message, true); } }
+  });
+  document.getElementById('filtrar').onclick = () => carregar().catch(err => toast(err.message, true));
+  document.getElementById('limpar').onclick = () => { document.getElementById('de').value = ''; document.getElementById('ate').value = ''; carregar(); };
+  document.getElementById('exportar').onclick = exportar;
+  document.getElementById('emitir').onclick = () => emitir().catch(err => toast(err.message, true));
+  CONECTA.iniciar('financeiro').then(u => {
+    eu = u;
+    document.getElementById('subtitulo').textContent = u.perfil === 'ADMIN' ? 'Contas a pagar às empresas parceiras' : 'Faturas emitidas aos contratantes';
+    if (u.perfil === 'TERCEIRIZADA') document.getElementById('emitir').style.display = '';
+    return carregar();
+  }).catch(err => toast(err.message, true));
+</script>
+</body>
+</html>

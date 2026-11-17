@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Contratos</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <h1 class="titulo">Vínculo e Contrato Digital</h1>
+  <p class="sub">Cadastre o contrato com a empresa terceirizada e anexe o PDF assinado</p>
+  <div id="formBox"></div>
+  <h2>Contratos cadastrados</h2>
+  <div id="lista"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, brl, dataBR, toast, dropzone } = CONECTA;
+  const STATUS = { ATIVO: ['ok', 'Ativo'], SOLICITADO: ['pend', 'Solicitado'], ENCERRADO: ['cinza', 'Encerrado'], CANCELADO: ['erro', 'Cancelado'] };
+
+  async function montarForm(eu) {
+    const box = document.getElementById('formBox');
+    if (eu.perfil !== 'ADMIN') { box.innerHTML = ''; return; }
+    const empresas = await api('/api/marketplace');
+    const pre = new URLSearchParams(location.search).get('empresa');
+    box.innerHTML =
+      '<form id="f" class="card"><div class="form-grid">' +
+        '<label class="campo"><span>Empresa terceirizada *</span><select id="emp"><option value="">Selecione…</option>' +
+          empresas.map(e => '<option value="' + e.id_empresa + '"' + (String(e.id_empresa) === pre ? ' selected' : '') + '>' + esc(e.nome_fantasia) + '</option>').join('') + '</select></label>' +
+        '<label class="campo"><span>Valor da prestação (R$) *</span><input id="valor" type="number" min="0" step="0.01" placeholder="0,00"></label>' +
+        '<label class="campo"><span>Tipo de cobrança *</span><select id="tipo"><option value="MENSAL">Mensal</option><option value="HORA">Por hora</option></select></label>' +
+        '<label class="campo"><span>Início da vigência *</span><input id="ini" type="date"></label>' +
+        '<label class="campo"><span>Fim da vigência *</span><input id="fim" type="date"></label>' +
+      '</div><div class="campo"><span>Contrato assinado (PDF)</span><div id="dz"></div></div>' +
+      '<div class="muted" style="margin-bottom:12px">Com o PDF assinado o contrato é registrado como <b>Ativo</b>. Sem o PDF, fica como <b>Solicitado</b> até você anexá-lo.</div>' +
+      '<div id="erro"></div><button class="btn">Salvar contrato</button></form>';
+    const dz = dropzone(document.getElementById('dz'), 'Arraste o contrato assinado (PDF) aqui');
+    document.getElementById('f').addEventListener('submit', async e => {
+      e.preventDefault();
+      const erroBox = document.getElementById('erro'); erroBox.innerHTML = '';
+      try {
+        const r = await api('/api/contratos', { body: {
+          id_terceirizada: document.getElementById('emp').value, valor_prestacao: document.getElementById('valor').value,
+          tipo_cobranca: document.getElementById('tipo').value, data_inicio: document.getElementById('ini').value,
+          data_fim: document.getElementById('fim').value, arquivo: dz.arquivo } });
+        toast(r.status === 'ATIVO' ? 'Contrato ativo registrado!' : 'Solicitação de vínculo registrada.');
+        setTimeout(() => location.href = '/contrato', 900);
+      } catch (err) { erroBox.innerHTML = '<div class="msg-erro">' + esc(err.message) + '</div>'; }
+    });
+  }
+  async function listar() {
+    const dados = await api('/api/contratos');
+    const el = document.getElementById('lista');
+    if (!dados.length) { el.innerHTML = '<div class="vazio card">Nenhum contrato cadastrado.</div>'; return; }
+    el.innerHTML = '<table class="tabela"><thead><tr><th>Contratante</th><th>Terceirizada</th><th class="num">Valor</th><th>Cobrança</th><th>Vigência</th><th>Status</th><th>PDF</th></tr></thead><tbody>' +
+      dados.map(c => { const s = STATUS[c.status] || ['cinza', c.status];
+        return '<tr><td>' + esc(c.contratante) + '</td><td>' + esc(c.terceirizada) + '</td><td class="num">' + (c.valor_prestacao != null ? brl(c.valor_prestacao) : '—') + '</td><td>' + (c.tipo_cobranca === 'HORA' ? 'Por hora' : c.tipo_cobranca === 'MENSAL' ? 'Mensal' : '—') + '</td><td>' +
+          (c.data_inicio ? dataBR(c.data_inicio) + ' a ' + dataBR(c.data_fim) : '—') + '</td><td><span class="badge ' + s[0] + '">' + s[1] + '</span></td><td>' +
+          (c.arquivo_pdf ? '<a href="/' + esc(c.arquivo_pdf) + '" target="_blank">abrir</a>' : '—') + '</td></tr>'; }).join('') + '</tbody></table>';
+  }
+  CONECTA.iniciar('contrato').then(async eu => { await montarForm(eu); await listar(); }).catch(err => toast(err.message, true));
+</script>
+</body>
+</html>

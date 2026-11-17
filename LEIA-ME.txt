@@ -1,0 +1,49 @@
+CONECTA - Sistema B2B com MySQL
+===============================
+Telas: Login, Marketplace, Perfil da Empresa, Vinculo e Contrato, Compliance (Portal da
+Terceirizada), Analise de Documentos, Obrigatoriedade, Painel Financeiro e Portaria.
+Todas conectadas ao banco "conecta".
+
+PASSO A PASSO
+1) Node.js instalado (https://nodejs.org, versao LTS).
+2) No Workbench, rode o CONECTA_Banco.sql INTEIRO (apaga e recria o banco "conecta" com
+   dados de exemplo e as senhas de demonstracao).
+3) Abra o server.js e troque 'SUA_SENHA' pela senha do root do MySQL.
+4) No Prompt de Comando, dentro desta pasta:
+       npm install
+       npm start
+   (para parar o servidor: Ctrl + C)
+5) Abra http://localhost:3000
+
+LOGIN DE DEMONSTRACAO (senha de todos: conecta123)
+  admin@conecta.com          -> contratante: Marketplace, Contratos, Compliance, Analise de
+                                Documentos, Obrigatoriedade, Financeiro, Portaria
+  terceirizada@conecta.com   -> terceirizada: Compliance (com avisos), Financeiro, Contratos
+  portaria@conecta.com       -> portaria: somente a tela Portaria
+
+FLUXO PRINCIPAL DO PROEX (RF001 a RF008)
+  1. terceirizada@... > Compliance > abrir "Paulo Mendes" > ASO ja enviado (pendente).
+     Ou "Novo funcionario" e anexar um ASO em PDF.
+  2. portaria@... > CPF 66666666666 > ACESSO NEGADO: "ASO pendente de analise".
+  3. admin@... > Analise de Documentos > "Aprovar Documento" no ASO do Paulo
+     > o sistema reavalia o colaborador (RF007) > mensagem "agora esta LIBERADO".
+  4. Portaria: o mesmo CPF agora mostra LIBERADO (verde).
+  5. Admin > Analise: "Reprovar" a Ficha de Registro da Ana Costa; a justificativa e
+     obrigatoria. A terceirizada ve o aviso em Compliance.
+  6. Admin > Obrigatoriedade: marcar/desmarcar o que e exigido (ASO, Ficha, NR-35...).
+     Ex.: tornar a Ficha obrigatoria bloqueia quem nao tem ficha aprovada.
+
+OUTROS TESTES
+  Marketplace  : buscar "Pintura" ou "Eletrica"; clicar num card abre o Perfil da Empresa.
+  Contrato     : valor, tipo e vigencia; arrastar um PDF -> contrato fica ATIVO; sem PDF = SOLICITADO.
+  Financeiro   : (terceirizada) "Emitir Nota Fiscal" -> aparece para a contratante, que "Marca paga".
+  Portaria     : 11111111111 LIBERADO | 22222222222 ASO vencido | 33333333333 sem NR-35
+                 55555555555 empresa sem contrato | 66666666666 ASO pendente | 99999999999 nao cadastrado
+  Acessibilidade (canto superior direito): fonte +/-, alto contraste e leitor de tela.
+
+OS PDFs enviados ficam na pasta "uploads" (criada automaticamente).
+
+CONFERIR NO BANCO
+  SELECT * FROM conecta.documento_funcionario;  -- status_analise, justificativa
+  SELECT * FROM conecta.notificacao;            SELECT * FROM conecta.v_portaria;
+  SELECT * FROM conecta.registro_acesso ORDER BY id_registro DESC;

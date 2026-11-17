@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Obrigatoriedade de Documentos</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <h1 class="titulo">Obrigatoriedade de Documentos</h1>
+  <p class="sub">Defina o que cada colaborador precisa ter (e ter aprovado) para ser liberado na portaria.</p>
+  <h2 style="margin-top:0">Documentos</h2>
+  <div id="docs"></div>
+  <h2>Treinamentos (NR)</h2>
+  <div id="nrs"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, toast } = CONECTA;
+  function tabela(itens, tipo) {
+    return '<table class="tabela"><thead><tr><th>Código</th><th>Descrição</th><th>Obrigatório para liberar o acesso</th></tr></thead><tbody>' +
+      itens.map(i => '<tr><td><b>' + esc(i.codigo) + '</b></td><td>' + esc(i.descricao) + '</td><td><label><input type="checkbox" data-tipo="' + tipo + '" data-id="' + i.id + '"' + (i.obrigatorio ? ' checked' : '') + '> ' + (i.obrigatorio ? 'Obrigatório' : 'Opcional') + '</label></td></tr>').join('') + '</tbody></table>';
+  }
+  async function carregar() {
+    const d = await api('/api/obrigatoriedade');
+    document.getElementById('docs').innerHTML = tabela(d.documentos, 'DOC');
+    document.getElementById('nrs').innerHTML = tabela(d.treinamentos, 'NR');
+  }
+  document.getElementById('conteudo').addEventListener('change', async e => {
+    const c = e.target.closest('input[data-id]'); if (!c) return;
+    try { await api('/api/obrigatoriedade', { body: { tipo: c.dataset.tipo, id: c.dataset.id, obrigatorio: c.checked } }); toast('Configuração salva.'); await carregar(); }
+    catch (err) { toast(err.message, true); await carregar(); }
+  });
+  CONECTA.iniciar('obrigatoriedade').then(() => carregar()).catch(err => toast(err.message, true));
+</script>
+</body>
+</html>

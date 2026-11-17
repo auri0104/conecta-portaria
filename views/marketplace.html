@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONECTA - Marketplace</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="conteudo">
+  <h1 class="titulo">Marketplace de Serviços</h1>
+  <p class="sub">Descubra e conecte-se com empresas terceirizadas verificadas</p>
+  <div class="busca"><input id="busca" type="text" placeholder="Encontre Pintura, Elétrica, Gesso..." aria-label="Buscar empresas ou especialidades" autocomplete="off"></div>
+  <div id="lista" class="grid"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+  const { api, esc, iniciais, cnpjF } = CONECTA;
+  async function carregar() {
+    const q = document.getElementById('busca').value;
+    const lista = document.getElementById('lista');
+    try {
+      const empresas = await api('/api/marketplace?q=' + encodeURIComponent(q));
+      if (!empresas.length) { lista.innerHTML = '<div class="vazio" style="grid-column:1/-1">Nenhuma empresa encontrada para essa busca.</div>'; return; }
+      lista.innerHTML = empresas.map(e =>
+        '<div class="card link' + (e.verificado ? ' verificado' : '') + '" tabindex="0" data-id="' + e.id_empresa + '">' +
+          '<div class="linha"><div class="emp-logo">' + esc(iniciais(e.nome_fantasia)) + '</div>' +
+          '<div><b>' + esc(e.nome_fantasia) + '</b><div class="muted">' + esc(cnpjF(e.cnpj)) + '</div></div></div>' +
+          '<div class="muted" style="margin-top:12px">📍 ' + esc(e.cidade) + ', ' + esc(e.uf) + '</div>' +
+          '<div class="tags">' + String(e.especialidades || '').split(',').filter(Boolean).map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>' +
+          '<div class="linha espaco" style="border-top:1px solid var(--borda);padding-top:12px"><span><span class="estrela">★</span> ' +
+          (e.avaliacao_media != null ? Number(e.avaliacao_media).toFixed(1) : '—') + '</span>' +
+          (e.verificado ? '<span class="badge ok">Verificado</span>' : '') + '</div></div>').join('');
+    } catch (err) { lista.innerHTML = '<div class="msg-erro" style="grid-column:1/-1">' + esc(err.message) + '</div>'; }
+  }
+  document.getElementById('lista').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) location.href = '/empresa?id=' + c.dataset.id; });
+  document.getElementById('lista').addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c) location.href = '/empresa?id=' + c.dataset.id; } });
+  let t; document.getElementById('busca').addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 250); });
+  CONECTA.iniciar('marketplace').then(carregar);
+</script>
+</body>
+</html>
